@@ -4,13 +4,15 @@
   "description": "OpenClaw 推推 (Tuitui) channel plugin",
   "type": "module",
   "dependencies": {
-  "undici": "7.22.0"
-},
+    "undici": "7.22.0"
+  },
   "devDependencies": {
     "openclaw": "workspace:*"
   },
   "openclaw": {
-    "extensions": ["./index.ts"],
+    "extensions": [
+      "./index.ts"
+    ],
     "channel": {
       "id": "tuitui",
       "label": "推推",
@@ -18,7 +20,9 @@
       "docsPath": "/channels/tuitui",
       "docsLabel": "tuitui",
       "blurb": "推推消息通道集成。",
-      "aliases": ["tt"],
+      "aliases": [
+        "tt"
+      ],
       "order": 85,
       "quickstartAllowFrom": true
     },

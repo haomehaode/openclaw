@@ -3,9 +3,9 @@
  * 文档：5、机器人收消息 — 收消息回调url、安全身份验证、收消息格式。
  */
 
-import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
+import { createHash } from "node:crypto";
 import {
   createReplyPrefixOptions,
   readRequestBodyWithLimit,
@@ -50,8 +50,15 @@ export function registerTuituiWebhookTarget(target: TuituiWebhookTarget): () => 
 }
 
 /** Checksum = sha1(app_secret + timestamp + nonce + post_body_json) */
-function verifyTuituiChecksum(secret: string, timestamp: string, nonce: string, body: string): string {
-  return createHash("sha1").update(secret + timestamp + nonce + body).digest("hex");
+function verifyTuituiChecksum(
+  secret: string,
+  timestamp: string,
+  nonce: string,
+  body: string,
+): string {
+  return createHash("sha1")
+    .update(secret + timestamp + nonce + body)
+    .digest("hex");
 }
 
 /** 收消息格式：event + data (msgid, msg_type, text, group_id, at_me 等) */
@@ -72,11 +79,16 @@ type TuituiInboundPayload = {
   };
 };
 
-function isSenderAllowed(account: ResolvedTuituiAccount, senderAccount: string): boolean {
-  const allowFrom = (account.config.allowFrom ?? []).map((x) => String(x).trim());
+function isSenderAllowed(senderAccount: string, allowFrom: string[]): boolean {
   if (allowFrom.includes("*")) return true;
   const normalized = senderAccount.toLowerCase();
-  return allowFrom.some((e) => e.toLowerCase().replace(/^(tuitui|tt):/i, "") === normalized);
+  return allowFrom.some(
+    (e) =>
+      String(e)
+        .toLowerCase()
+        .replace(/^(tuitui|tt):/i, "")
+        .trim() === normalized,
+  );
 }
 
 async function processTuituiInbound(params: {
@@ -126,7 +138,7 @@ async function processTuituiInbound(params: {
   const allowFrom = (account.config.allowFrom ?? []).map((x) => String(x).trim());
   const storeAllowFrom = await core.channel.pairing.readAllowFromStore("tuitui").catch(() => []);
   const effectiveAllowFrom = [...allowFrom, ...storeAllowFrom];
-  const senderAllowed = isSenderAllowed(account, userAccount);
+  const senderAllowed = isSenderAllowed(userAccount, effectiveAllowFrom);
   const rawBody = text;
   const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(rawBody, config);
   const commandAuthorized = shouldComputeAuth
@@ -151,7 +163,10 @@ async function processTuituiInbound(params: {
             idLine: `您的域账号: ${userAccount}`,
             code,
           });
-          await sendMessageTuitui(userAccount, reply, { cfg: config, accountId: account.accountId });
+          await sendMessageTuitui(userAccount, reply, {
+            cfg: config,
+            accountId: account.accountId,
+          });
           statusSink?.({ lastOutboundAt: Date.now() });
         }
       }
@@ -166,12 +181,18 @@ async function processTuituiInbound(params: {
     peer: { kind: isGroup ? "group" : "direct", id: chatId },
   });
 
-  if (isGroup && core.channel.commands.isControlCommandMessage(rawBody, config) && commandAuthorized !== true) {
+  if (
+    isGroup &&
+    core.channel.commands.isControlCommandMessage(rawBody, config) &&
+    commandAuthorized !== true
+  ) {
     return;
   }
 
   const fromLabel = isGroup ? `group:${chatId}` : userName || `user:${userAccount}`;
-  const storePath = core.channel.session.resolveStorePath(config.session?.store, { agentId: route.agentId });
+  const storePath = core.channel.session.resolveStorePath(config.session?.store, {
+    agentId: route.agentId,
+  });
   const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(config);
   const previousTimestamp = core.channel.session.readSessionUpdatedAt({
     storePath,
@@ -236,8 +257,15 @@ async function processTuituiInbound(params: {
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
-        const outText = core.channel.text.convertMarkdownTables(payload.text ?? "", tableMode ?? "code");
-        const chunks = core.channel.text.chunkMarkdownTextWithMode(outText, textChunkLimit, chunkMode);
+        const outText = core.channel.text.convertMarkdownTables(
+          payload.text ?? "",
+          tableMode ?? "code",
+        );
+        const chunks = core.channel.text.chunkMarkdownTextWithMode(
+          outText,
+          textChunkLimit,
+          chunkMode,
+        );
         for (const chunk of chunks) {
           try {
             await sendMessageTuitui(chatId, chunk, { cfg: config, accountId: account.accountId });
@@ -299,9 +327,15 @@ export async function handleTuituiWebhookRequest(
       encoding: "utf-8",
     });
   } catch (err) {
-    const code = err && typeof err === "object" && "code" in err ? (err as { code: string }).code : null;
-    res.statusCode = code === "PAYLOAD_TOO_LARGE" ? 413 : code === "REQUEST_BODY_TIMEOUT" ? 408 : 400;
-    res.end(code === "REQUEST_BODY_TIMEOUT" ? requestBodyErrorToText("REQUEST_BODY_TIMEOUT") : "bad request");
+    const code =
+      err && typeof err === "object" && "code" in err ? (err as { code: string }).code : null;
+    res.statusCode =
+      code === "PAYLOAD_TOO_LARGE" ? 413 : code === "REQUEST_BODY_TIMEOUT" ? 408 : 400;
+    res.end(
+      code === "REQUEST_BODY_TIMEOUT"
+        ? requestBodyErrorToText("REQUEST_BODY_TIMEOUT")
+        : "bad request",
+    );
     return true;
   }
 

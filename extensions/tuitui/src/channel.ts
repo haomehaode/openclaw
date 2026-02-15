@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
 import type {
   ChannelAccountSnapshot,
   ChannelDock,
   ChannelPlugin,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
+import { readFileSync } from "node:fs";
 import {
   applyAccountNameToChannelSection,
   buildChannelConfigSchema,
@@ -28,16 +28,13 @@ import {
 import { tuituiMessageActions } from "./actions.js";
 import { modifyTuituiWebhookUrl } from "./api.js";
 import { TuituiConfigSchema } from "./config-schema.js";
+import { monitorTuituiProvider } from "./monitor.js";
 import { tuituiOnboardingAdapter } from "./onboarding.js";
 import { probeTuituiAccount } from "./probe.js";
-import { sendMessageTuitui } from "./send.js";
 import { getTuituiRuntime } from "./runtime.js";
-import { monitorTuituiProvider } from "./monitor.js";
+import { sendMessageTuitui } from "./send.js";
 import { collectTuituiStatusIssues } from "./status-issues.js";
-import {
-  getTuituiWebhookDefaultPath,
-  registerTuituiWebhookTarget,
-} from "./webhook.js";
+import { getTuituiWebhookDefaultPath, registerTuituiWebhookTarget } from "./webhook.js";
 
 const meta = {
   id: "tuitui",
@@ -220,13 +217,18 @@ export const tuituiPlugin: ChannelPlugin<ResolvedTuituiAccount> = {
 
       let appIdSecret: { appId: string; secret: string } | null = null;
       if (!input.useEnv && input.token?.includes(":")) {
-        const [a, s] = input.token.split(":");
-        if (a?.trim() && s?.trim()) appIdSecret = { appId: a.trim(), secret: s.trim() };
+        const colonIdx = input.token.indexOf(":");
+        const a = input.token.slice(0, colonIdx).trim();
+        const s = input.token.slice(colonIdx + 1).trim();
+        if (a && s) appIdSecret = { appId: a, secret: s };
       }
       if (!appIdSecret && input.tokenFile) {
         try {
           const content = readFileSync(input.tokenFile, "utf8").trim();
-          const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+          const lines = content
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean);
           if (lines.length >= 2) appIdSecret = { appId: lines[0], secret: lines[1] };
         } catch {
           // ignore
@@ -340,21 +342,13 @@ export const tuituiPlugin: ChannelPlugin<ResolvedTuituiAccount> = {
   },
   gateway: {
     startAccount: async (ctx) => {
-      const path =
-        ctx.account.config.webhookPath?.trim() || getTuituiWebhookDefaultPath();
+      const path = ctx.account.config.webhookPath?.trim() || getTuituiWebhookDefaultPath();
       const baseUrl = ctx.account.config.webhookBaseUrl?.trim();
       if (baseUrl && ctx.account.appId && ctx.account.secret) {
-        const fullUrl =
-          baseUrl.replace(/\/$/, "") + (path.startsWith("/") ? path : `/${path}`);
-        const result = await modifyTuituiWebhookUrl(
-          ctx.account.appId,
-          ctx.account.secret,
-          fullUrl,
-        );
+        const fullUrl = baseUrl.replace(/\/$/, "") + (path.startsWith("/") ? path : `/${path}`);
+        const result = await modifyTuituiWebhookUrl(ctx.account.appId, ctx.account.secret, fullUrl);
         if (!result.ok) {
-          ctx.log?.error?.(
-            `[${ctx.account.accountId}] 推推改收消息回调url失败: ${result.error}`,
-          );
+          ctx.log?.error?.(`[${ctx.account.accountId}] 推推改收消息回调url失败: ${result.error}`);
         } else {
           ctx.log?.info?.(
             `[${ctx.account.accountId}] 推推收消息回调已设为 ${fullUrl}（约 5 分钟后生效）`,
@@ -367,17 +361,10 @@ export const tuituiPlugin: ChannelPlugin<ResolvedTuituiAccount> = {
         config: ctx.cfg,
         runtime: ctx.runtime,
         core: getTuituiRuntime(),
-        statusSink: (patch) =>
-          ctx.setStatus({ accountId: ctx.accountId, ...patch }),
+        statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
       });
-      ctx.abortSignal.addEventListener(
-        "abort",
-        () => unregister(),
-        { once: true },
-      );
-      ctx.log?.info(
-        `[${ctx.account.accountId}] 推推 provider 启动，webhook path=${path}`,
-      );
+      ctx.abortSignal.addEventListener("abort", () => unregister(), { once: true });
+      ctx.log?.info(`[${ctx.account.accountId}] 推推 provider 启动，webhook path=${path}`);
       return monitorTuituiProvider({
         account: ctx.account,
         abortSignal: ctx.abortSignal,
